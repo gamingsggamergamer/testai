@@ -31,7 +31,7 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  const { username, message, image } = req.body;
+  const { username, message, image, model } = req.body;
   
   if (!username || !users[username]) {
     return res.status(401).json({ error: 'Please login first' });
@@ -41,20 +41,22 @@ app.post('/api/chat', async (req, res) => {
     return res.status(403).json({ error: 'Daily credit limit reached (0/100 remaining).' });
   }
 
-  users[username].credits -= 1;
-
   try {
     const userContent = [];
     if (message) userContent.push({ type: "text", text: message });
     if (image) userContent.push({ type: "image_url", image_url: { url: image } });
 
+    const targetModel = model || 'fable-5.1';
+
     const response = await openai.chat.completions.create({
-      model: 'fable-5.1',
+      model: targetModel,
       messages: [{ role: 'user', content: userContent }]
     });
 
+    users[username].credits -= 1;
+
     const botMessage = response.choices[0].message.content;
-    const thinkingProcess = "Analyzing Roblox Studio request...\nParsing Luau syntax constraints...\nGenerating clean code structure without comments...";
+    const thinkingProcess = "Analyzing request for Roblox Studio...\nApplying Luau optimizations & platform constraints...\nParsing components and generating clean code structure...";
 
     res.json({
       reply: botMessage,
