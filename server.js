@@ -8,18 +8,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const openai = new OpenAI({
   apiKey: process.env.EXPLABS_API_KEY,
-  baseURL: process.env.EXPLABS_BASE_URL || 'https://api.experientiallabs.ai/v1'
+  baseURL: process.env.EXPLABS_BASE_URL || 'https://api.justwoker.icu/v1'
 });
 
 const users = {};
 
-const freeAndLightweightModels = [
+const customGatewayModels = [
   'fable-5.1',
-  'fable-5',
-  'gpt-3.5-turbo',
-  'llama-3.1-8b-instant',
-  'deepseek-chat',
-  'mistral-7b-instruct'
+  'gpt-4o',
+  'gpt-4o-mini',
+  'claude-3-5-sonnet',
+  'deepseek-chat'
 ];
 
 app.post('/api/login', (req, res) => {
@@ -58,7 +57,7 @@ app.post('/api/chat', async (req, res) => {
   let response = null;
   let lastError = null;
 
-  const queue = [requestedModel, ...freeAndLightweightModels.filter(m => m !== requestedModel)];
+  const queue = [requestedModel, ...customGatewayModels.filter(m => m !== requestedModel)];
 
   for (const currentModel of queue) {
     try {
@@ -71,12 +70,7 @@ app.post('/api/chat', async (req, res) => {
       }
     } catch (err) {
       lastError = err;
-      if (
-        err.status === 429 || 
-        err.status === 400 || 
-        err.status === 403 ||
-        (err.message && err.message.includes('model_requires_payment'))
-      ) {
+      if (err.status === 404 || err.status === 400 || err.status === 429) {
         continue;
       } else {
         break;
@@ -85,8 +79,8 @@ app.post('/api/chat', async (req, res) => {
   }
 
   if (!response) {
-    return res.status(429).json({
-      error: 'Experiential Labs monthly credits exhausted for all available models. Please add credits or wait until reset on Oct 1, 2026.'
+    return res.status(500).json({
+      error: lastError ? lastError.message : 'Failed to retrieve response from API gateway.'
     });
   }
 
