@@ -8,7 +8,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const openai = new OpenAI({
   apiKey: process.env.EXPLABS_API_KEY,
-  baseURL: process.env.EXPLABS_BASE_URL || 'https://api.justwoker.icu/v1'
+  baseURL: process.env.EXPLABS_BASE_URL || 'https://api.justwoker.icu/v1',
+  defaultHeaders: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9'
+  }
 });
 
 const users = {};
@@ -70,7 +75,7 @@ app.post('/api/chat', async (req, res) => {
       }
     } catch (err) {
       lastError = err;
-      if (err.status === 404 || err.status === 400 || err.status === 429) {
+      if (err.status === 404 || err.status === 400 || err.status === 429 || err.status === 403) {
         continue;
       } else {
         break;
@@ -80,7 +85,7 @@ app.post('/api/chat', async (req, res) => {
 
   if (!response) {
     return res.status(500).json({
-      error: lastError ? lastError.message : 'Failed to retrieve response from API gateway.'
+      error: 'Cloudflare blocked the server IP or API gateway is unreachable. Please check Cloudflare firewall settings on justwoker.icu.'
     });
   }
 
