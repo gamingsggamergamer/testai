@@ -13,13 +13,13 @@ const openai = new OpenAI({
 
 const users = {};
 
-const fallbackModels = [
+const freeAndLightweightModels = [
   'fable-5.1',
   'fable-5',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'claude-3-5-sonnet',
-  'mistral-large'
+  'gpt-3.5-turbo',
+  'llama-3.1-8b-instant',
+  'deepseek-chat',
+  'mistral-7b-instruct'
 ];
 
 app.post('/api/login', (req, res) => {
@@ -54,13 +54,13 @@ app.post('/api/chat', async (req, res) => {
   if (message) userContent.push({ type: "text", text: message });
   if (image) userContent.push({ type: "image_url", image_url: { url: image } });
 
-  let selectedModel = model || 'fable-5.1';
+  let requestedModel = model || 'fable-5.1';
   let response = null;
   let lastError = null;
 
-  const modelQueue = [selectedModel, ...fallbackModels.filter(m => m !== selectedModel)];
+  const queue = [requestedModel, ...freeAndLightweightModels.filter(m => m !== requestedModel)];
 
-  for (const currentModel of modelQueue) {
+  for (const currentModel of queue) {
     try {
       response = await openai.chat.completions.create({
         model: currentModel,
@@ -72,10 +72,10 @@ app.post('/api/chat', async (req, res) => {
     } catch (err) {
       lastError = err;
       if (
-        err.status === 400 || 
-        err.status === 403 || 
         err.status === 429 || 
-        (err.message && err.message.includes('Bring Your Own Key'))
+        err.status === 400 || 
+        err.status === 403 ||
+        (err.message && err.message.includes('model_requires_payment'))
       ) {
         continue;
       } else {
@@ -85,8 +85,8 @@ app.post('/api/chat', async (req, res) => {
   }
 
   if (!response) {
-    return res.status(500).json({
-      error: lastError ? lastError.message : 'Unable to route model request. Please connect your provider key in Experiential Labs workspace.'
+    return res.status(429).json({
+      error: 'Experiential Labs monthly credits exhausted for all available models. Please add credits or wait until reset on Oct 1, 2026.'
     });
   }
 
