@@ -12,6 +12,26 @@ const openai = new OpenAI({
 });
 
 const users = {};
+let activeGrantedModel = 'fable-5.1';
+
+async function verifyAndSetGrantedModel() {
+  try {
+    const list = await openai.models.list();
+    if (list && list.data && list.data.length > 0) {
+      const availableModels = list.data.map(m => m.id);
+      const matched = availableModels.find(m => m.includes('fable') || m.includes('claude'));
+      if (matched) {
+        activeGrantedModel = matched;
+      } else {
+        activeGrantedModel = availableModels[0];
+      }
+    }
+  } catch (err) {
+    activeGrantedModel = 'fable-5';
+  }
+}
+
+verifyAndSetGrantedModel();
 
 app.post('/api/login', (req, res) => {
   const { username } = req.body;
@@ -31,7 +51,7 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  const { username, message, image, model } = req.body;
+  const { username, message, image } = req.body;
   
   if (!username || !users[username]) {
     return res.status(401).json({ error: 'Please login first' });
@@ -46,12 +66,23 @@ app.post('/api/chat', async (req, res) => {
     if (message) userContent.push({ type: "text", text: message });
     if (image) userContent.push({ type: "image_url", image_url: { url: image } });
 
-    const targetModel = model || 'fable-5.1';
-
-    const response = await openai.chat.completions.create({
-      model: targetModel,
-      messages: [{ role: 'user', content: userContent }]
-    });
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: activeGrantedModel,
+        messages: [{ role: 'user', content: userContent }]
+      });
+    } catch (apiErr) {
+      if (apiErr.status === 403 || (apiErr.message && apiErr.message.includes('not granted'))) {
+        await verifyAndSetGrantedModel();
+        response = await openai.chat.completions.create({
+          model: activeGrantedModel,
+          messages: [{ role: 'user', content: userContent }]
+        });
+      } else {
+        throw apiErr;
+      }
+    }
 
     users[username].credits -= 1;
 
