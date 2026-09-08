@@ -42,6 +42,7 @@ async function sendMessage() {
   if (!message && !selectedImageBase64) return;
 
   const chatBox = document.getElementById('chat-box');
+  const selectedModel = document.getElementById('model-select').value;
 
   if (message) {
     chatBox.innerHTML += `<div class="msg user-msg">${message}</div>`;
@@ -74,7 +75,8 @@ async function sendMessage() {
     body: JSON.stringify({
       username: currentUser,
       message,
-      image: selectedImageBase64
+      image: selectedImageBase64,
+      model: selectedModel
     })
   });
 
