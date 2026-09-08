@@ -12,22 +12,15 @@ const openai = new OpenAI({
 });
 
 const users = {};
-let availableModelsList = ['fable-5', 'fable-5.1', 'claude-3-5-sonnet'];
-let activeGrantedModel = 'fable-5';
 
-async function fetchAvailableModels() {
-  try {
-    const list = await openai.models.list();
-    if (list && list.data && list.data.length > 0) {
-      availableModelsList = list.data.map(m => m.id);
-      activeGrantedModel = availableModelsList[0];
-    }
-  } catch (err) {
-    activeGrantedModel = 'fable-5';
-  }
-}
-
-fetchAvailableModels();
+const fallbackModels = [
+  'fable-5.1',
+  'fable-5',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'claude-3-5-sonnet',
+  'mistral-large'
+];
 
 app.post('/api/login', (req, res) => {
   const { username } = req.body;
@@ -47,7 +40,7 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  const { username, message, image } = req.body;
+  const { username, message, image, model } = req.body;
   
   if (!username || !users[username]) {
     return res.status(401).json({ error: 'Please login first' });
@@ -57,48 +50,56 @@ app.post('/api/chat', async (req, res) => {
     return res.status(403).json({ error: 'Daily credit limit reached (0/100 remaining).' });
   }
 
-  try {
-    const userContent = [];
-    if (message) userContent.push({ type: "text", text: message });
-    if (image) userContent.push({ type: "image_url", image_url: { url: image } });
+  const userContent = [];
+  if (message) userContent.push({ type: "text", text: message });
+  if (image) userContent.push({ type: "image_url", image_url: { url: image } });
 
-    let response;
-    let modelAttemptIndex = 0;
+  let selectedModel = model || 'fable-5.1';
+  let response = null;
+  let lastError = null;
 
-    while (modelAttemptIndex < availableModelsList.length) {
-      const currentModel = availableModelsList[modelAttemptIndex];
-      try {
-        response = await openai.chat.completions.create({
-          model: currentModel,
-          messages: [{ role: 'user', content: userContent }]
-        });
-        activeGrantedModel = currentModel;
+  const modelQueue = [selectedModel, ...fallbackModels.filter(m => m !== selectedModel)];
+
+  for (const currentModel of modelQueue) {
+    try {
+      response = await openai.chat.completions.create({
+        model: currentModel,
+        messages: [{ role: 'user', content: userContent }]
+      });
+      if (response && response.choices && response.choices.length > 0) {
         break;
-      } catch (apiErr) {
-        if (apiErr.status === 429 || apiErr.status === 403) {
-          modelAttemptIndex++;
-          if (modelAttemptIndex >= availableModelsList.length) {
-            throw new Error("Your Experiential Labs account free credit limit has been reached for all models. Please top up credits or wait for monthly reset.");
-          }
-        } else {
-          throw apiErr;
-        }
+      }
+    } catch (err) {
+      lastError = err;
+      if (
+        err.status === 400 || 
+        err.status === 403 || 
+        err.status === 429 || 
+        (err.message && err.message.includes('Bring Your Own Key'))
+      ) {
+        continue;
+      } else {
+        break;
       }
     }
-
-    users[username].credits -= 1;
-
-    const botMessage = response.choices[0].message.content;
-    const thinkingProcess = "Analyzing request for Roblox Studio...\nApplying Luau optimizations & platform constraints...\nParsing components and generating clean code structure...";
-
-    res.json({
-      reply: botMessage,
-      thinking: thinkingProcess,
-      remainingCredits: users[username].credits
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
+
+  if (!response) {
+    return res.status(500).json({
+      error: lastError ? lastError.message : 'Unable to route model request. Please connect your provider key in Experiential Labs workspace.'
+    });
+  }
+
+  users[username].credits -= 1;
+
+  const botMessage = response.choices[0].message.content;
+  const thinkingProcess = "Analyzing request for Roblox Studio...\nApplying Luau optimizations & platform constraints...\nParsing components and generating clean code structure...";
+
+  res.json({
+    reply: botMessage,
+    thinking: thinkingProcess,
+    remainingCredits: users[username].credits
+  });
 });
 
 const PORT = process.env.PORT || 3000;
