@@ -12,26 +12,22 @@ const openai = new OpenAI({
 });
 
 const users = {};
-let activeGrantedModel = 'fable-5.1';
+let availableModelsList = ['fable-5', 'fable-5.1', 'claude-3-5-sonnet'];
+let activeGrantedModel = 'fable-5';
 
-async function verifyAndSetGrantedModel() {
+async function fetchAvailableModels() {
   try {
     const list = await openai.models.list();
     if (list && list.data && list.data.length > 0) {
-      const availableModels = list.data.map(m => m.id);
-      const matched = availableModels.find(m => m.includes('fable') || m.includes('claude'));
-      if (matched) {
-        activeGrantedModel = matched;
-      } else {
-        activeGrantedModel = availableModels[0];
-      }
+      availableModelsList = list.data.map(m => m.id);
+      activeGrantedModel = availableModelsList[0];
     }
   } catch (err) {
     activeGrantedModel = 'fable-5';
   }
 }
 
-verifyAndSetGrantedModel();
+fetchAvailableModels();
 
 app.post('/api/login', (req, res) => {
   const { username } = req.body;
@@ -67,20 +63,26 @@ app.post('/api/chat', async (req, res) => {
     if (image) userContent.push({ type: "image_url", image_url: { url: image } });
 
     let response;
-    try {
-      response = await openai.chat.completions.create({
-        model: activeGrantedModel,
-        messages: [{ role: 'user', content: userContent }]
-      });
-    } catch (apiErr) {
-      if (apiErr.status === 403 || (apiErr.message && apiErr.message.includes('not granted'))) {
-        await verifyAndSetGrantedModel();
+    let modelAttemptIndex = 0;
+
+    while (modelAttemptIndex < availableModelsList.length) {
+      const currentModel = availableModelsList[modelAttemptIndex];
+      try {
         response = await openai.chat.completions.create({
-          model: activeGrantedModel,
+          model: currentModel,
           messages: [{ role: 'user', content: userContent }]
         });
-      } else {
-        throw apiErr;
+        activeGrantedModel = currentModel;
+        break;
+      } catch (apiErr) {
+        if (apiErr.status === 429 || apiErr.status === 403) {
+          modelAttemptIndex++;
+          if (modelAttemptIndex >= availableModelsList.length) {
+            throw new Error("Your Experiential Labs account free credit limit has been reached for all models. Please top up credits or wait for monthly reset.");
+          }
+        } else {
+          throw apiErr;
+        }
       }
     }
 
